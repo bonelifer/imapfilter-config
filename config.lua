@@ -104,7 +104,7 @@ local function filter_webinar(account)
   results:move_messages(account['misc-webinar'])
 end
 
--- Normal filters on from address
+-- Filter messages by From, CC, or To address
 local function filter_from(account, address, folder)
   local results = account.INBOX:contain_from(address) +
                   account.INBOX:contain_cc(address) +
