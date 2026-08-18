@@ -13,7 +13,7 @@ local function script_path()
   return path or "./"
 end
 
--- Feilhåndtering for fillasting: Kjører kun dofile hvis filene eksisterer
+-- File-loading error handling: only run dofile when the file exists
 local function load_config(file)
   local f = io.open(file, "r")
   if f then
@@ -22,23 +22,23 @@ local function load_config(file)
   end
 end
 
--- Last inn avhengigheter én gang for å unngå I/O-operasjoner i løkker
+-- Load dependencies once to avoid I/O operations inside loops
 local base_path = script_path()
 load_config(base_path .. 'accounts.lua')
 load_config(base_path .. 'filters.lua')
 
--- Sikkerhetsmekanisme: Definerer tabeller som tomme dersom de mangler i konfigurasjonsfilene
+-- Safety mechanism: define tables as empty if they are missing from the config files
 accounts = accounts or {}
 from_to_cc_folder = from_to_cc_folder or {}
 
 -- Filter mailing lists dynamically via RFC 2919 List-Id header
 local function filter_dynamic_lists(account)
-  -- Omgår serverbegrensninger ved å velge alle meldinger i innboksen
+  -- Work around server limitations by selecting all messages in the inbox
   local results = account.INBOX:select_all()
 
   if #results == 0 then return end
 
-  -- Henter HELE meldingshodet for alle meldinger for å forhindre tap av brettede linjer
+  -- Fetch the complete header for every message to preserve folded lines
   local headers = account.INBOX:fetch_header(results)
   local messages_by_folder = {}
 
@@ -47,19 +47,19 @@ local function filter_dynamic_lists(account)
     local header = headers[uid] or headers[tostring(uid)] or ""
 
     if header ~= "" then
-      -- RFC 5322 unfolding: Fjerner linjeskift etterfulgt av blanktegn (mellomrom/tabulator) 
-      -- og erstatter med et enkelt mellomrom over hele header-blokken.
+      -- RFC 5322 unfolding: replace line breaks followed by whitespace
+      -- (spaces or tabs) with a single space across the complete header block.
       header = string.gsub(header, "\r?\n[ \t]+", " ")
 
-      -- Legger til et innledende linjeskift for å garantere treff på starten av linjen.
-      -- [^\n]- sikrer at regex-motoren ikke leser forbi linjeskift under søk etter < >.
+      -- Add a leading line break to ensure matches at the start of a line.
+      -- [^\n]- prevents the pattern engine from reading past a line break while searching for < >.
       local list_id = string.match("\n" .. header, "\n[Ll][Ii][Ss][Tt]%-[Ii][Dd]:[^\n]-<([^>]+)>")
 
       if list_id then
         local is_valid = true
         local lower_list_id = string.lower(list_id)
 
-        -- Valideringsregler for å ekskludere uønsket syntaks
+        -- Validation rules that exclude unwanted syntax
         if string.len(list_id) > 50 then is_valid = false end
         if string.match(list_id, "=") then is_valid = false end
         if string.match(lower_list_id, "srs") then is_valid = false end
@@ -79,7 +79,7 @@ local function filter_dynamic_lists(account)
     end
   end
 
-  -- Utfører bulk-flytting per mappe
+  -- Move messages in batches for each folder
   for folder, msgs in pairs(messages_by_folder) do
     Set(msgs):move_messages(account[folder])
   end
@@ -117,10 +117,10 @@ for _, account in pairs(accounts) do
   filter_newsletter(account)
   filter_webinar(account)
 
-  -- Automatisk identifisering og ruting av mailinglister
+  -- Automatically identify and route mailing lists
   filter_dynamic_lists(account)
 
-  -- Prosesserer manuelle regler for avsendere (Ignoreres om tabellen er tom)
+  -- Process manual sender rules (ignored when the table is empty)
   for address, folder in pairs(from_to_cc_folder) do
     filter_from(account, address, folder)
   end
